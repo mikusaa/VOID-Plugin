@@ -15,7 +15,7 @@ require_once('libs/ParseImg.php');
 
 class VOID_Plugin implements Typecho_Plugin_Interface
 {
-    public static $VERSION = 1.2.1;
+    public static $VERSION = '1.2.1';
 
     private static function hasColumn($table, $field) {
         $db = Typecho_Db::get();
