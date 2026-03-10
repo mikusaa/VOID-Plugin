@@ -32,8 +32,9 @@ function widgetById($table, $pkId)
     $className = "Widget_Abstract_{$table}";
     $key = $keys[$table];
     $db = Typecho_Db::get();
-    // $widget = new $className(Typecho_Request::getInstance(), Typecho_Widget_Helper_Empty::getInstance());
-    $widget = $className::alloc(); //适配 Typecho 1.2 
+    
+    // 兼容 Typecho 1.2 及 1.3 的通用获取方法
+    $widget = Typecho_Widget::widget($className);
     
     $db->fetchRow(
         $widget->select()->where("{$key} = ?", $pkId)->limit(1),
