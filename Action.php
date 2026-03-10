@@ -52,12 +52,12 @@ class VOID_Action extends Typecho_Widget implements Widget_Interface_Do
     {
         $this->body = json_decode(file_get_contents('php://input'), true);
 
-        $this->on($this->request->is('content'))->vote_content();
-        $this->on($this->request->is('comment'))->vote_comment();
-        $this->on($this->request->is('show'))->vote_show();
-        $this->on($this->request->is('getimginfo'))->void_img_info();
-        $this->on($this->request->is('getsingleimginfo'))->void_single_img_info();
-        $this->on($this->request->is('cleanimginfo'))->void_clean_img_info();
+        $this->on(isset($_GET['content']) || isset($_POST['content']))->vote_content();
+        $this->on(isset($_GET['comment']) || isset($_POST['comment']))->vote_comment();
+        $this->on(isset($_GET['show']) || isset($_POST['show']))->vote_show();
+        $this->on(isset($_GET['getimginfo']) || isset($_POST['getimginfo']))->void_img_info();
+        $this->on(isset($_GET['getsingleimginfo']) || isset($_POST['getsingleimginfo']))->void_single_img_info();
+        $this->on(isset($_GET['cleanimginfo']) || isset($_POST['cleanimginfo']))->void_clean_img_info();
         
         //$this->response->goBack();
     }
