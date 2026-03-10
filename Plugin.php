@@ -5,7 +5,7 @@ if (!defined('__TYPECHO_ROOT_DIR__')) exit;
  * 
  * @package VOID
  * @author 熊猫小A
- * @version 1.2.1
+ * @version 1.3.0
  * @link https://blog.imalan.cn
  */
 
@@ -13,9 +13,14 @@ require_once('libs/WordCount.php');
 require_once('libs/IP.php');
 require_once('libs/ParseImg.php');
 
+// 为兼容 Typecho 1.3 移除的旧式 Interface 别名
+if (!interface_exists('Typecho_Plugin_Interface') && interface_exists('Typecho\Plugin\PluginInterface')) {
+    class_alias('Typecho\Plugin\PluginInterface', 'Typecho_Plugin_Interface');
+}
+
 class VOID_Plugin implements Typecho_Plugin_Interface
 {
-    public static $VERSION = '1.2.1';
+    public static $VERSION = '1.3.0';
 
     private static function hasColumn($table, $field) {
         $db = Typecho_Db::get();

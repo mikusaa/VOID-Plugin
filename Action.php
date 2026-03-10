@@ -23,14 +23,19 @@ function widgetById($table, $pkId)
     }
 
     $keys = array(
+        'Contents'  =>  class_exists('\Widget\Base\Contents') ? '\Widget\Base\Contents' : 'Widget_Abstract_Contents',
+        'Comments'  =>  class_exists('\Widget\Base\Comments') ? '\Widget\Base\Comments' : 'Widget_Abstract_Comments',
+        'Metas'     =>  class_exists('\Widget\Base\Metas') ? '\Widget\Base\Metas' : 'Widget_Abstract_Metas',
+        'Users'     =>  class_exists('\Widget\Users\Author') ? '\Widget\Users\Author' : 'Widget_Abstract_Users'
+    );
+
+    $className = $keys[$table];
+    $key = array(
         'Contents'  =>  'cid',
         'Comments'  =>  'coid',
         'Metas'     =>  'mid',
         'Users'     =>  'uid'
-    );
-
-    $className = "Widget_Abstract_{$table}";
-    $key = $keys[$table];
+    )[$table];
     $db = Typecho_Db::get();
     
     // 兼容 Typecho 1.2 及 1.3 的通用获取方法
