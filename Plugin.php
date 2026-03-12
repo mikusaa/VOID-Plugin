@@ -24,14 +24,26 @@ class VOID_Plugin implements Typecho_Plugin_Interface
 
     private static function hasColumn($table, $field) {
         $db = Typecho_Db::get();
-        $sql = "SHOW COLUMNS FROM `".$table."` LIKE '%".$field."%'";
-        return count($db->fetchAll($sql)) != 0;
+        // 兼容性：改为精确匹配，避免 LIKE 模糊匹配导致误判
+        $rows = $db->fetchAll("SHOW COLUMNS FROM `".$table."`");
+        foreach ($rows as $row) {
+            if (isset($row['Field']) && $row['Field'] === $field) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static function hasTable($table) {
         $db = Typecho_Db::get();
-        $sql = "SHOW TABLES LIKE '%".$table."%'";
-        return count($db->fetchAll($sql)) != 0;
+        // 兼容性：改为精确匹配，避免 LIKE 模糊匹配导致误判
+        $rows = $db->fetchAll("SHOW TABLES");
+        foreach ($rows as $row) {
+            if ($table === reset($row)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static function queryAndCatch($sql) {
@@ -55,8 +67,8 @@ class VOID_Plugin implements Typecho_Plugin_Interface
         // 检查数据库类型
         $db = Typecho_Db::get();
         $prefix = $db->getPrefix();
-        $adapterName =  strtolower($db->getAdapterName());
-        if (strpos($adapterName, 'mysql') < 0) {
+        $adapterName =  strtolower($db->getAdapterName() ?? '');
+        if (strpos($adapterName, 'mysql') === false) {
             throw new Typecho_Plugin_Exception('启用失败，本插件暂时只支持 MySQL 数据库，您的数据库是：'.$adapterName);
         }
 
@@ -247,7 +259,7 @@ class VOID_Plugin implements Typecho_Plugin_Interface
             if(empty($views)){
                 $views = array();
             } else {
-                $views = explode(',', $views);
+                $views = explode(',', $views ?? '');
             }
             if(!in_array($cid,$views)){
                 $db = Typecho_Db::get();

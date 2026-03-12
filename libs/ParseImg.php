@@ -28,10 +28,11 @@ Class VOID_ParseImgInfo
         if (0 === strpos($content, '<!--html-->')) {
             $html = $content;
         } else {
-            $html = Markdown::convert($content);
+            $html = Markdown::convert($content ?? '');
         }
 
         $doc = str_get_html($html);
+        if (!$doc) return array(0, 0, 0, 0);
         $imgArr = $doc->find('img');
 
         $limit = Helper::options()->plugin('VOID')->parseImgLimit;
@@ -42,7 +43,7 @@ Class VOID_ParseImgInfo
         foreach ($imgArr as $v) {
             $src = $v->src;
 
-            if (strpos($src, 'vwid') !== false) {
+            if (strpos($src ?? '', 'vwid') !== false) {
                 $result[2]++;
                 continue; // 已经处理过该图片
             }
@@ -82,7 +83,8 @@ Class VOID_ParseImgInfo
         $content = $db->fetchRow($db->select('text')
                 ->from('table.contents')
                 ->where('cid = ?', $cid));
-        $content = $content['text'];
+        $content = $content['text'] ?? null;
+        if ($content === null) return 0;
 
         $count = 0;
         $content = preg_replace("/#vwid=\d{0,5}&vhei=\d{0,5}/i", '', $content, -1, $count);
@@ -104,8 +106,7 @@ Class VOID_ParseImgInfo
      */
     public static function GetImageSize($url) 
     {
-        error_reporting(0);
-        $meta = getimagesize($url);
+        $meta = @getimagesize($url);
         if ($meta == false) {
             // 尝试另一种方式
             $meta = self::GetImageSizeCURL($url);

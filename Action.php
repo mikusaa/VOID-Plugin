@@ -8,6 +8,10 @@ require_once 'libs/IP.php';
 require_once 'libs/ParseAgent.php';
 require_once 'libs/ParseImg.php';
 
+// 为兼容 Typecho 1.3 移除的旧式 Interface 别名
+if (!interface_exists('Widget_Interface_Do') && interface_exists('\Widget\ActionInterface')) {
+    class_alias('\Widget\ActionInterface', 'Widget_Interface_Do');
+}
 
 /**
  * 根据ID获取单个Widget对象
@@ -55,7 +59,8 @@ class VOID_Action extends Typecho_Widget implements Widget_Interface_Do
     private $body = null;
     public function action()
     {
-        $this->body = json_decode(file_get_contents('php://input'), true);
+        $raw = file_get_contents('php://input');
+        $this->body = $raw ? json_decode($raw, true) : null;
 
         $this->on(isset($_GET['content']) || isset($_POST['content']))->vote_content();
         $this->on(isset($_GET['comment']) || isset($_POST['comment']))->vote_comment();
@@ -77,7 +82,8 @@ class VOID_Action extends Typecho_Widget implements Widget_Interface_Do
             exit;
         }
         
-        $cid = $_GET['cid'];
+        $cid = $_GET['cid'] ?? null;
+        if (!$cid) return;
         print_r(VOID_ParseImgInfo::parse($cid));
     }
 
@@ -166,6 +172,7 @@ class VOID_Action extends Typecho_Widget implements Widget_Interface_Do
 
     private function vote_comment()
     {
+        if (!is_array($this->body)) return;
         if($this->body['type'] == 'up') {
             $this->vote_excute('comments', 'coid', $this->body['id'], 'likes', 'up');
         } else {
@@ -175,6 +182,7 @@ class VOID_Action extends Typecho_Widget implements Widget_Interface_Do
 
     private function vote_content()
     {
+        if (!is_array($this->body)) return;
         $this->vote_excute('contents', 'cid', $this->body['id'], 'likes', 'up');
     }
 
@@ -222,8 +230,8 @@ class VOID_Action extends Typecho_Widget implements Widget_Interface_Do
             $content = '';
             if ($row['table'] == 'comments') {
                 $content = $instance->content;
-                $content = Typecho_Common::stripTags($content);
-                $content = mb_substr($content, 0, 12);
+                $content = Typecho_Common::stripTags($content ?? '');
+                $content = mb_substr($content ?? '', 0, 12);
                 $content .= '...';
             } else {
                 $content = $instance->title;
@@ -239,7 +247,7 @@ class VOID_Action extends Typecho_Widget implements Widget_Interface_Do
                 'created_format' => date('Y-m-d H:i', $row['created']),
                 'os' => ParseAgent::getOs($row['agent']),
                 'browser' => ParseAgent::getBrowser($row['agent']),
-                'location' => str_replace('中国', '', IPLocation_IP::locate($row['ip']))
+                'location' => str_replace('中国', '', IPLocation_IP::locate($row['ip']) ?? '')
             );
             $arr['data'][] = $item;
         }
@@ -247,14 +255,78 @@ class VOID_Action extends Typecho_Widget implements Widget_Interface_Do
         echo json_encode($arr);
     }
 
+    private function vote_verify_source()
+    {
+        $site_url = Helper::options()->siteUrl;
+        $site = parse_url($site_url);
+        $site_host = strtolower($site['host'] ?? ($_SERVER['HTTP_HOST'] ?? ''));
+        if (!$site_host) return false;
+
+        $site_scheme = strtolower($site['scheme'] ?? ((!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http'));
+        $site_port = isset($site['port']) ? intval($site['port']) : ($site_scheme === 'https' ? 443 : 80);
+
+        $sources = array();
+        if (!empty($_SERVER['HTTP_ORIGIN'])) $sources[] = $_SERVER['HTTP_ORIGIN'];
+        if (!empty($_SERVER['HTTP_REFERER'])) $sources[] = $_SERVER['HTTP_REFERER'];
+        if (!count($sources)) return false;
+
+        foreach ($sources as $source) {
+            $parts = parse_url($source);
+            if (!is_array($parts) || !array_key_exists('host', $parts)) continue;
+
+            $host = strtolower($parts['host']);
+            $scheme = strtolower($parts['scheme'] ?? 'http');
+            $port = isset($parts['port']) ? intval($parts['port']) : ($scheme === 'https' ? 443 : 80);
+            if ($host === $site_host && $port === $site_port) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function vote_verify_request()
+    {
+        if (strtoupper($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
+            return false;
+        }
+
+        $token = null;
+        if (is_array($this->body) && array_key_exists('_', $this->body)) {
+            $token = $this->body['_'];
+        } elseif (isset($_REQUEST['_'])) {
+            $token = $_REQUEST['_'];
+        }
+
+        // 兼容 Typecho 安全 token：前端若已携带则优先校验
+        if (is_string($token) && $token !== '') {
+            $referer = $this->request->getReferer();
+            if ($token === $this->security->getToken($referer)) {
+                return true;
+            }
+        }
+
+        // 不改现有前端协议：未携带 token 时走同源来源校验
+        return $this->vote_verify_source();
+    }
+
     private function vote_excute($table, $key, $id, $field, $type)
     {
         header("Content-type:application/json");
         $db = Typecho_Db::get();
 
+        if (!$this->vote_verify_request()) {
+            echo json_encode(array(
+                'code'=> 403,
+                'msg'=> 'invalid request'
+            ));
+            return;
+        }
+
         // 检测重复 IP
         $ip = $_SERVER['REMOTE_ADDR'];
-        $rows = null;
+        // 兼容 PHP 8.1+：保持 count() 入参始终为数组
+        $rows = array();
         try {
             $rows = $db->fetchAll($db->select('type')
                         ->from('table.votes')
@@ -266,6 +338,8 @@ class VOID_Action extends Typecho_Widget implements Widget_Interface_Do
                 'code'=> 500,
                 'msg'=> $th->getMessage()
             ));
+            // 兼容 PHP 8.1+：查询失败后立即中止，避免后续逻辑继续执行
+            return;
         }
 
         if(count($rows)) {

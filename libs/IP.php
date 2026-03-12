@@ -25,7 +25,15 @@ class IPLocation_IP
         }
         if (self::$fp === NULL)
         {
-            self::init();
+            try {
+                self::init();
+            } catch (Exception $e) {
+                return 'N/A';
+            }
+        }
+        if (self::$fp === NULL || self::$index === NULL)
+        {
+            return 'N/A';
         }
         $nip2 = pack('N', ip2long($nip));
         $tmp_offset = (int)$ipdot[0] * 4;
@@ -80,7 +88,7 @@ class IPLocation_IP
         $addresses = IPLocation_IP::find($ip);
         $address = 'unknown';
         
-        if (!empty($addresses) && $addresses!= 'N/A') {
+        if (!empty($addresses) && is_array($addresses)) {
             $addresses = array_unique($addresses);
             $address = implode('', $addresses);
         }

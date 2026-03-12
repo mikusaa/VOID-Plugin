@@ -33,9 +33,10 @@ class VOID_WordCount
         $row = $db->fetchRow($db->select()->from('table.contents')->where('cid = ?', $cid));
 
         // 中文字数
-        $count = mb_strlen(preg_replace("/[^\x{4e00}-\x{9fa5}]/u", "", $row['text']), 'UTF-8');
+        $text = $row['text'] ?? '';
+        $count = mb_strlen(preg_replace("/[^\x{4e00}-\x{9fa5}]/u", "", $text), 'UTF-8');
         // 英文词数
-        $count += str_word_count($row['text'], 0);
+        $count += str_word_count($text, 0);
 
         $db->query($db->update('table.contents')->rows(array('wordCount' => (int)$count))->where('cid = ?', $cid));
     }

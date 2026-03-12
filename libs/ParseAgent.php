@@ -19,6 +19,7 @@ class ParseAgent
     // 获取浏览器信息
     static public function getBrowser($agent)
     {
+        $agent = $agent ?? '';
         $browser = 'Unkown';
 
         if (preg_match('/MSIE\s([^\s|;]+)/i', $agent, $regs)) {
@@ -55,6 +56,7 @@ class ParseAgent
     // 获取操作系统信息
     static public function getOs($agent)
     {
+        $agent = $agent ?? '';
         $os = 'Unkown';
     
         if (preg_match('/win/i', $agent)) {
