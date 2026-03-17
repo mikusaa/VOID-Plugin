@@ -4,9 +4,7 @@
  *
  * @author AlanDecode | 熊猫小A
  */
-require_once 'libs/IP.php';
-require_once 'libs/ParseAgent.php';
-require_once 'libs/ParseImg.php';
+require_once __DIR__ . '/libs/bootstrap.php';
 
 // 为兼容 Typecho 1.3 移除的旧式 Interface 别名
 if (!interface_exists('Widget_Interface_Do') && interface_exists('\Widget\ActionInterface')) {
@@ -57,6 +55,51 @@ $GLOBALS['ImgParsed'] = 0;
 class VOID_Action extends Typecho_Widget implements Widget_Interface_Do
 {
     private $body = null;
+
+    private function securityWidget()
+    {
+        return Typecho_Widget::widget('Widget_Security');
+    }
+
+    private function require_admin_user()
+    {
+        Typecho_Widget::widget('Widget_User')->to($user);
+        return $user->have() && $user->hasLogin() && $user->pass('administrator', true);
+    }
+
+    private function vote_json_response($code, $msg, $extra = array())
+    {
+        $payload = array_merge(array(
+            'code' => (int)$code,
+            'msg' => (string)$msg
+        ), is_array($extra) ? $extra : array());
+
+        echo json_encode($payload);
+    }
+
+    private function vote_request_id()
+    {
+        if (!is_array($this->body) || !array_key_exists('id', $this->body)) {
+            return 0;
+        }
+
+        $id = filter_var($this->body['id'], FILTER_VALIDATE_INT, array(
+            'options' => array('min_range' => 1)
+        ));
+
+        return $id ? (int)$id : 0;
+    }
+
+    private function vote_request_type($allowed = array('up'))
+    {
+        if (!is_array($this->body) || !array_key_exists('type', $this->body)) {
+            return '';
+        }
+
+        $type = strtolower(trim((string)$this->body['type']));
+        return in_array($type, $allowed, true) ? $type : '';
+    }
+
     public function action()
     {
         $raw = file_get_contents('php://input');
@@ -68,6 +111,7 @@ class VOID_Action extends Typecho_Widget implements Widget_Interface_Do
         $this->on(isset($_GET['getimginfo']) || isset($_POST['getimginfo']))->void_img_info();
         $this->on(isset($_GET['getsingleimginfo']) || isset($_POST['getsingleimginfo']))->void_single_img_info();
         $this->on(isset($_GET['cleanimginfo']) || isset($_POST['cleanimginfo']))->void_clean_img_info();
+        $this->on(isset($_GET['wordcount_preview']) || isset($_POST['wordcount_preview']))->wordcount_preview();
         
         //$this->response->goBack();
     }
@@ -76,8 +120,7 @@ class VOID_Action extends Typecho_Widget implements Widget_Interface_Do
     private function void_single_img_info()
     {
         // 要求先登录
-        Typecho_Widget::widget('Widget_User')->to($user);
-        if (!$user->have() || !$user->hasLogin()) {
+        if (!$this->require_admin_user()) {
             echo 'Invalid Request';
             exit;
         }
@@ -91,8 +134,7 @@ class VOID_Action extends Typecho_Widget implements Widget_Interface_Do
     private function void_clean_img_info()
     {
         // 要求先登录
-        Typecho_Widget::widget('Widget_User')->to($user);
-        if (!$user->have() || !$user->hasLogin()) {
+        if (!$this->require_admin_user()) {
             echo 'Invalid Request';
             exit;
         }
@@ -120,8 +162,7 @@ class VOID_Action extends Typecho_Widget implements Widget_Interface_Do
     private function void_img_info()
     {
         // 要求先登录
-        Typecho_Widget::widget('Widget_User')->to($user);
-        if (!$user->have() || !$user->hasLogin()) {
+        if (!$this->require_admin_user()) {
             echo 'Invalid Request';
             exit;
         }
@@ -173,17 +214,35 @@ class VOID_Action extends Typecho_Widget implements Widget_Interface_Do
     private function vote_comment()
     {
         if (!is_array($this->body)) return;
-        if($this->body['type'] == 'up') {
-            $this->vote_excute('comments', 'coid', $this->body['id'], 'likes', 'up');
+
+        $id = $this->vote_request_id();
+        $type = $this->vote_request_type(array('up', 'down'));
+        if (!$id || $type === '') {
+            header("Content-type:application/json");
+            $this->vote_json_response(400, 'invalid vote payload');
+            return;
+        }
+
+        if ($type === 'up') {
+            $this->vote_excute('comments', 'coid', $id, 'likes', 'up');
         } else {
-            $this->vote_excute('comments', 'coid', $this->body['id'], 'dislikes', 'down');
+            $this->vote_excute('comments', 'coid', $id, 'dislikes', 'down');
         }
     }
 
     private function vote_content()
     {
         if (!is_array($this->body)) return;
-        $this->vote_excute('contents', 'cid', $this->body['id'], 'likes', 'up');
+
+        $id = $this->vote_request_id();
+        $type = $this->vote_request_type(array('up'));
+        if (!$id || $type === '') {
+            header("Content-type:application/json");
+            $this->vote_json_response(400, 'invalid vote payload');
+            return;
+        }
+
+        $this->vote_excute('contents', 'cid', $id, 'likes', 'up');
     }
 
     private function vote_show ()
@@ -191,8 +250,7 @@ class VOID_Action extends Typecho_Widget implements Widget_Interface_Do
         $db = Typecho_Db::get();
         $pageSize = 10;
 
-        Typecho_Widget::widget('Widget_User')->to($user);
-        if (!$user->have() || !$user->hasLogin()) {
+        if (!$this->require_admin_user()) {
             echo 'Invalid Request';
             exit;
         }
@@ -247,12 +305,30 @@ class VOID_Action extends Typecho_Widget implements Widget_Interface_Do
                 'created_format' => date('Y-m-d H:i', $row['created']),
                 'os' => ParseAgent::getOs($row['agent']),
                 'browser' => ParseAgent::getBrowser($row['agent']),
-                'location' => str_replace('中国', '', IPLocation_IP::locate($row['ip']) ?? '')
+                'location' => VOID_IpDb::locate($row['ip'])
             );
             $arr['data'][] = $item;
         }
 
         echo json_encode($arr);
+    }
+
+    private function wordcount_preview()
+    {
+        header("Content-type:application/json");
+
+        if (strtoupper($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST' || !$this->require_admin_user()) {
+            $this->vote_json_response(403, 'invalid request');
+            return;
+        }
+
+        $text = '';
+        if (is_array($this->body) && array_key_exists('text', $this->body)) {
+            $text = (string)$this->body['text'];
+        }
+
+        $result = VOID_WordCount::analyze($text);
+        echo json_encode($result);
     }
 
     private function vote_verify_source()
@@ -301,7 +377,7 @@ class VOID_Action extends Typecho_Widget implements Widget_Interface_Do
         // 兼容 Typecho 安全 token：前端若已携带则优先校验
         if (is_string($token) && $token !== '') {
             $referer = $this->request->getReferer();
-            if ($token === $this->security->getToken($referer)) {
+            if ($token === $this->securityWidget()->getToken($referer)) {
                 return true;
             }
         }
@@ -316,45 +392,48 @@ class VOID_Action extends Typecho_Widget implements Widget_Interface_Do
         $db = Typecho_Db::get();
 
         if (!$this->vote_verify_request()) {
-            echo json_encode(array(
-                'code'=> 403,
-                'msg'=> 'invalid request'
-            ));
+            $this->vote_json_response(403, 'invalid request');
             return;
         }
 
         // 检测重复 IP
         $ip = $_SERVER['REMOTE_ADDR'];
-        // 兼容 PHP 8.1+：保持 count() 入参始终为数组
-        $rows = array();
+
+        $target = null;
         try {
-            $rows = $db->fetchAll($db->select('type')
-                        ->from('table.votes')
-                        ->where('ip = ?', $ip)
-                        ->where('id = ?', $id)
-                        ->where('table = ?', $table));
+            $target = $db->fetchRow($db->select($key)
+                        ->from('table.' . $table)
+                        ->where($key . ' = ?', $id)
+                        ->limit(1));
         } catch (Typecho_Db_Query_Exception $th) {
-            echo json_encode(array(
-                'code'=> 500,
-                'msg'=> $th->getMessage()
-            ));
-            // 兼容 PHP 8.1+：查询失败后立即中止，避免后续逻辑继续执行
+            $this->vote_json_response(500, $th->getMessage());
             return;
         }
 
-        if(count($rows)) {
-            $row = $rows[0];
+        if (!$target || !isset($target[$key])) {
+            $this->vote_json_response(404, 'target not found');
+            return;
+        }
+
+        $row = null;
+        try {
+            $row = $db->fetchRow($db->select('type')
+                        ->from('table.votes')
+                        ->where('ip = ?', $ip)
+                        ->where('id = ?', $id)
+                        ->where('table = ?', $table)
+                        ->limit(1));
+        } catch (Typecho_Db_Query_Exception $th) {
+            $this->vote_json_response(500, $th->getMessage());
+            return;
+        }
+
+        if (is_array($row) && count($row)) {
             if ($row['type'] != $type) {
                 // 不允许改变投票类型
-                echo json_encode(array(
-                    'code'=> 403,
-                    'msg'=> 'can\'t change vote'
-                ));
+                $this->vote_json_response(403, 'can\'t change vote');
             } else {
-                echo json_encode(array(
-                    'code'=> 302,
-                    'msg' => 'done'
-                ));
+                $this->vote_json_response(302, 'done');
             }
         } else {
             try {
@@ -371,22 +450,17 @@ class VOID_Action extends Typecho_Widget implements Widget_Interface_Do
                 $db->query($db->insert('table.votes')->rows(array(
                     'id' => $id,
                     'table' => $table,
-                    'type' => $this->body['type'],
-                    'agent' => $_SERVER['HTTP_USER_AGENT'],
+                    'type' => $type,
+                    'agent' => $_SERVER['HTTP_USER_AGENT'] ?? '',
                     'ip' => $ip,
                     'created' => time()
                 )));
 
-                echo json_encode(array(
-                    'code'=> 200,
-                    'msg'=> 'done'
-                ));
+                $this->vote_json_response(200, 'done');
             } catch (Typecho_Db_Query_Exception $th) {
-                echo json_encode(array(
-                    'code'=> 500,
-                    'msg'=> $th->getMessage()
-                ));
+                $this->vote_json_response(500, $th->getMessage());
             }
         }
     }
+
 }

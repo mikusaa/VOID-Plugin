@@ -5,13 +5,11 @@ if (!defined('__TYPECHO_ROOT_DIR__')) exit;
  * 
  * @package VOID
  * @author 熊猫小A
- * @version 1.3.0
+ * @version 1.4.0
  * @link https://blog.imalan.cn
  */
 
-require_once('libs/WordCount.php');
-require_once('libs/IP.php');
-require_once('libs/ParseImg.php');
+require_once __DIR__ . '/libs/bootstrap.php';
 
 // 为兼容 Typecho 1.3 移除的旧式 Interface 别名
 if (!interface_exists('Typecho_Plugin_Interface') && interface_exists('Typecho\Plugin\PluginInterface')) {
@@ -20,7 +18,41 @@ if (!interface_exists('Typecho_Plugin_Interface') && interface_exists('Typecho\P
 
 class VOID_Plugin implements Typecho_Plugin_Interface
 {
-    public static $VERSION = '1.3.0';
+    public static $VERSION = '1.4.0';
+
+    private static function assetVersion($relativePath)
+    {
+        $relativePath = ltrim((string)$relativePath, '/');
+        return @filemtime(__DIR__ . '/' . $relativePath) ?: self::$VERSION;
+    }
+
+    private static function cleanupLegacyActivityPanel()
+    {
+        try {
+            Helper::removePanel(3, 'VOID/pages/showActivity.php');
+        } catch (Exception $e) {
+        }
+    }
+
+    public static function editorStatsPanel()
+    {
+        ob_start();
+        Helper::options()->index('/action/void?wordcount_preview=1');
+        $previewUrl = trim(ob_get_clean());
+        $cssPath = 'assets/admin/editor/stats.css';
+        $jsPath = 'assets/admin/editor/stats.js';
+        $cssVersion = self::assetVersion($cssPath);
+        $jsVersion = self::assetVersion($jsPath);
+
+        $config = array(
+            'previewUrl' => $previewUrl
+        );
+        ?>
+        <script>window.VOIDEditorStatsConfig = <?php echo json_encode($config, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE); ?>;</script>
+        <link rel="stylesheet" href="<?php Helper::options()->pluginUrl('VOID/' . $cssPath); ?>?v=<?php echo rawurlencode((string)$cssVersion); ?>">
+        <script src="<?php Helper::options()->pluginUrl('VOID/' . $jsPath); ?>?v=<?php echo rawurlencode((string)$jsVersion); ?>"></script>
+        <?php
+    }
 
     private static function hasColumn($table, $field) {
         $db = Typecho_Db::get();
@@ -40,6 +72,17 @@ class VOID_Plugin implements Typecho_Plugin_Interface
         $rows = $db->fetchAll("SHOW TABLES");
         foreach ($rows as $row) {
             if ($table === reset($row)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static function hasIndex($table, $indexName) {
+        $db = Typecho_Db::get();
+        $rows = $db->fetchAll("SHOW INDEX FROM `".$table."`");
+        foreach ($rows as $row) {
+            if (isset($row['Key_name']) && $row['Key_name'] === $indexName) {
                 return true;
             }
         }
@@ -76,6 +119,15 @@ class VOID_Plugin implements Typecho_Plugin_Interface
         if (!extension_loaded('openssl')) {
             throw new Typecho_Plugin_Exception('启用失败，PHP 需启用 OpenSSL 扩展。');
         }
+        if (!class_exists('DOMDocument') || !class_exists('DOMXPath')) {
+            throw new Typecho_Plugin_Exception('启用失败，PHP 需启用 DOM 扩展。');
+        }
+
+        try {
+            VOID_IpDb::bootstrapOrFail();
+        } catch (Exception $e) {
+            throw new Typecho_Plugin_Exception('启用失败，IP 数据库初始化失败：' . $e->getMessage());
+        }
 
         /** 图片附件尺寸解析，注册 hook */
         Typecho_Plugin::factory('Widget_Upload')->upload = array('VOID_Plugin', 'upload');
@@ -90,6 +142,8 @@ class VOID_Plugin implements Typecho_Plugin_Interface
         // 注册 hook
         Typecho_Plugin::factory('Widget_Contents_Post_Edit')->finishPublish = array('VOID_Plugin', 'updateContent');
         Typecho_Plugin::factory('Widget_Contents_Page_Edit')->finishPublish = array('VOID_Plugin', 'updateContent');
+        Typecho_Plugin::factory('admin/write-post.php')->bottom = array('VOID_Plugin', 'editorStatsPanel');
+        Typecho_Plugin::factory('admin/write-page.php')->bottom = array('VOID_Plugin', 'editorStatsPanel');
         // 加入查询
         Typecho_Plugin::factory('Widget_Archive')->___wordCount = array('VOID_Plugin', 'wordCount');
 
@@ -136,7 +190,8 @@ class VOID_Plugin implements Typecho_Plugin_Interface
             ) default charset=utf8;
             CREATE INDEX index_ip ON '.$table_name.'(`ip`);
             CREATE INDEX index_id ON '.$table_name.'(`id`);
-            CREATE INDEX index_table ON '.$table_name.'(`table`)';
+            CREATE INDEX index_table ON '.$table_name.'(`table`);
+            CREATE INDEX index_created ON '.$table_name.'(`created`)';
 
             $sqls = explode(';', $sql);
             foreach ($sqls as $sql) {
@@ -146,10 +201,16 @@ class VOID_Plugin implements Typecho_Plugin_Interface
             if (!self::hasColumn($prefix.'votes', 'created')) {
                 self::queryAndCatch('ALTER TABLE `'. $prefix .'votes` ADD COLUMN `created` INT(10) DEFAULT 0;');
             }
+            if (!self::hasIndex($prefix.'votes', 'index_created')) {
+                self::queryAndCatch('CREATE INDEX index_created ON `'. $prefix .'votes`(`created`)');
+            }
         }
 
         // 添加一个面板，展示互动信息，例如评论赞踩、文章点赞
-        Helper::addPanel(3, 'VOID/pages/showActivity.php', '互动', '查看访客互动', 'administrator');
+        self::cleanupLegacyActivityPanel();
+        Helper::addPanel(3, 'VOID/pages/activity.php', '互动', '查看访客互动', 'administrator');
+        // 历史版本曾注册独立 IP 数据库面板，当前已迁移到插件设置页中管理。
+        Helper::removePanel(3, 'VOID/pages/ipdb.php');
 
         // 添加投票路由，文章与评论
         Helper::addAction('void', 'VOID_Action');
@@ -170,7 +231,9 @@ class VOID_Plugin implements Typecho_Plugin_Interface
 	{
         Helper::removeAction('void');
         Helper::removeAction('void_vote');
+        Helper::removePanel(3, 'VOID/pages/activity.php');
         Helper::removePanel(3, 'VOID/pages/showActivity.php');
+        Helper::removePanel(3, 'VOID/pages/ipdb.php');
     }
     
     /**
@@ -304,7 +367,7 @@ class VOID_Plugin implements Typecho_Plugin_Interface
      */
     public static function commentLocation($comments)
     {
-        $location = IPLocation_IP::locate($comments->ip);
+        $location = VOID_IpDb::locate($comments->ip);
         echo $comments->ip . '<br>' . $location;
     }
 }
