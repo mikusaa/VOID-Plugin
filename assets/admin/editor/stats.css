@@ -198,3 +198,39 @@
         font-size: 20px;
     }
 }
+
+html[data-typecho-theme="dark"] .void-editor-stats {
+    --void-admin-surface: var(--dm-surface, #22262d);
+    --void-admin-surface-raised: var(--dm-surface-raised, #292e36);
+    --void-admin-surface-muted: var(--dm-surface-muted, #1d2127);
+    --void-admin-border: var(--dm-border, #3a414b);
+    --void-admin-border-soft: var(--dm-border-soft, #303640);
+    --void-admin-text: var(--dm-text, #d9dee7);
+    --void-admin-text-muted: var(--dm-text-muted, #99a3b1);
+    border-color: var(--void-admin-border);
+    background: var(--void-admin-surface);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+    color: var(--void-admin-text);
+}
+
+html[data-typecho-theme="dark"] .void-editor-stats-card {
+    border-color: var(--void-admin-border-soft);
+    background: var(--void-admin-surface-raised);
+}
+
+html[data-typecho-theme="dark"] .void-editor-stats-title,
+html[data-typecho-theme="dark"] .void-editor-stats-value {
+    color: var(--void-admin-text);
+}
+
+html[data-typecho-theme="dark"] .void-editor-stats-subtitle,
+html[data-typecho-theme="dark"] .void-editor-stats-label,
+html[data-typecho-theme="dark"] .void-editor-stats-detail,
+html[data-typecho-theme="dark"] .void-editor-stats-note {
+    color: var(--void-admin-text-muted);
+}
+
+html[data-typecho-theme="dark"] .void-editor-stats-detail,
+html[data-typecho-theme="dark"] .void-editor-stats-note {
+    background: var(--void-admin-surface-muted);
+}

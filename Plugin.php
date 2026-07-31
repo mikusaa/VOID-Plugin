@@ -5,7 +5,7 @@ if (!defined('__TYPECHO_ROOT_DIR__')) exit;
  * 
  * @package VOID
  * @author 熊猫小A
- * @version 1.4.0
+ * @version 1.4.1
  * @link https://blog.imalan.cn
  */
 
@@ -18,7 +18,7 @@ if (!interface_exists('Typecho_Plugin_Interface') && interface_exists('Typecho\P
 
 class VOID_Plugin implements Typecho_Plugin_Interface
 {
-    public static $VERSION = '1.4.0';
+    public static $VERSION = '1.4.1';
 
     private static function assetVersion($relativePath)
     {
