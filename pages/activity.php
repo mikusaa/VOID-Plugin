@@ -5,8 +5,8 @@ if (!defined('__TYPECHO_ROOT_DIR__')) exit;
  */
 $activityCssPath = dirname(__FILE__) . '/../assets/admin/activity/activity.css';
 $activityJsPath = dirname(__FILE__) . '/../assets/admin/activity/activity.js';
-$activityCssVersion = @filemtime($activityCssPath) ?: '1.4.2';
-$activityJsVersion = @filemtime($activityJsPath) ?: '1.4.2';
+$activityCssVersion = @filemtime($activityCssPath) ?: '1.4.1';
+$activityJsVersion = @filemtime($activityJsPath) ?: '1.4.1';
 
 include 'header.php';
 include 'menu.php';
