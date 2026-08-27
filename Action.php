@@ -112,6 +112,7 @@ class VOID_Action extends Typecho_Widget implements Widget_Interface_Do
         $this->on(isset($_GET['getsingleimginfo']) || isset($_POST['getsingleimginfo']))->void_single_img_info();
         $this->on(isset($_GET['cleanimginfo']) || isset($_POST['cleanimginfo']))->void_clean_img_info();
         $this->on(isset($_GET['wordcount_preview']) || isset($_POST['wordcount_preview']))->wordcount_preview();
+        $this->on(isset($_GET['banner_meta_backfill']) || isset($_POST['banner_meta_backfill']))->banner_meta_backfill();
         
         //$this->response->goBack();
     }
@@ -329,6 +330,43 @@ class VOID_Action extends Typecho_Widget implements Widget_Interface_Do
 
         $result = VOID_WordCount::analyze($text);
         echo json_encode($result);
+    }
+
+    private function banner_meta_backfill()
+    {
+        $method = strtoupper($_SERVER['REQUEST_METHOD'] ?? '');
+        $token = $this->request->get('_');
+        $referer = $this->request->getReferer();
+        $validToken = is_string($token)
+            && $token !== ''
+            && $token === $this->securityWidget()->getToken($referer);
+
+        if ($method !== 'POST' || !$this->require_admin_user() || !$validToken) {
+            $this->response->setStatus(403);
+            echo 'Invalid Request';
+            return;
+        }
+
+        $beforeCid = filter_var($this->request->get('beforeCid'), FILTER_VALIDATE_INT, array(
+            'options' => array('default' => 0, 'min_range' => 0)
+        ));
+        $force = (string)$this->request->get('force') === '1';
+        $result = VOID_ParseImgInfo::backfillBannerMeta((int)$beforeCid, $force);
+        $params = array(
+            'config' => 'VOID',
+            'bannerMetaBackfill' => 1,
+            'batch' => 1,
+            'success' => (int)$result['success'],
+            'skipped' => (int)$result['skipped'],
+            'failed' => (int)$result['failed'],
+            'beforeCid' => (int)$result['beforeCid'],
+            'hasMore' => !empty($result['hasMore']) ? 1 : 0,
+            'force' => $force ? 1 : 0
+        );
+        ob_start();
+        Helper::options()->adminUrl('options-plugin.php?' . http_build_query($params));
+        $url = trim(ob_get_clean());
+        $this->response->redirect($url);
     }
 
     private function vote_verify_source()

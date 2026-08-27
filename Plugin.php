@@ -5,7 +5,7 @@ if (!defined('__TYPECHO_ROOT_DIR__')) exit;
  * 
  * @package VOID
  * @author 熊猫小A
- * @version 1.4.1
+ * @version 1.4.2
  * @link https://blog.imalan.cn
  */
 
@@ -18,7 +18,7 @@ if (!interface_exists('Typecho_Plugin_Interface') && interface_exists('Typecho\P
 
 class VOID_Plugin implements Typecho_Plugin_Interface
 {
-    public static $VERSION = '1.4.1';
+    public static $VERSION = '1.4.2';
 
     private static function assetVersion($relativePath)
     {
@@ -32,6 +32,105 @@ class VOID_Plugin implements Typecho_Plugin_Interface
             Helper::removePanel(3, 'VOID/pages/showActivity.php');
         } catch (Exception $e) {
         }
+    }
+
+    private static function escapeHtml($value)
+    {
+        return htmlspecialchars((string)$value, ENT_QUOTES, 'UTF-8');
+    }
+
+    private static function getStoredParseImgLimit()
+    {
+        try {
+            $value = Helper::options()->plugin('VOID')->parseImgLimit;
+            if (is_scalar($value) && preg_match('/^[1-9][0-9]*$/D', (string)$value)) {
+                return max(1, min(1000, (int)$value));
+            }
+        } catch (Exception $e) {
+        }
+
+        return 10;
+    }
+
+    private static function renderBannerMetaSettings()
+    {
+        $request = class_exists('Typecho\\Request')
+            ? \Typecho\Request::getInstance()
+            : Typecho_Request::getInstance();
+        $options = Helper::options();
+        ob_start();
+        $options->adminUrl('options-plugin.php');
+        $settingsPageUrl = trim(ob_get_clean());
+        ob_start();
+        $options->adminUrl('options-plugin.php?config=VOID');
+        $settingsUrl = trim(ob_get_clean());
+        $isBackfillPage = (string)$request->get('bannerMetaBackfill') === '1';
+        $limit = self::getStoredParseImgLimit();
+        ?>
+        <style>
+        .void-banner-meta-settings{margin:0 0 24px}
+        .void-banner-meta-settings h3{margin:0 0 .5em;font-size:inherit;line-height:inherit}
+        .void-banner-meta-result{margin:14px 0}
+        .void-banner-meta-actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:14px}
+        .void-banner-meta-actions form{margin:0}.void-banner-meta-actions .btn{margin:0}
+        .void-banner-meta-cancel{display:inline-flex;align-items:center}
+        </style>
+        <section class="typecho-option void-banner-meta-settings">
+            <h3>封面尺寸元数据</h3>
+            <p class="description">新发布的内容会自动记录封面尺寸；升级前的内容可在这里分批补全，每批 <?php echo (int)$limit; ?> 篇。</p>
+            <?php if (!$isBackfillPage): ?>
+                <div class="void-banner-meta-actions">
+                    <form action="<?php echo self::escapeHtml($settingsPageUrl); ?>" method="get">
+                        <input type="hidden" name="config" value="VOID">
+                        <input type="hidden" name="bannerMetaBackfill" value="1">
+                        <button class="btn" type="submit">开始历史回填</button>
+                    </form>
+                </div>
+            <?php else: ?>
+                <?php
+                $hasResult = (string)$request->get('batch') === '1';
+                $success = max(0, (int)$request->get('success'));
+                $skipped = max(0, (int)$request->get('skipped'));
+                $failed = max(0, (int)$request->get('failed'));
+                $beforeCid = max(0, (int)$request->get('beforeCid'));
+                $hasMore = (string)$request->get('hasMore') === '1';
+                $force = (string)$request->get('force') === '1';
+                $resultClass = $hasResult && !$hasMore && $failed === 0 ? 'success' : 'notice';
+                $security = Typecho_Widget::widget('Widget_Security');
+                ob_start();
+                $security->index('/action/void?banner_meta_backfill=1');
+                $actionUrl = trim(ob_get_clean());
+                ?>
+                <?php if ($hasResult): ?>
+                    <div class="message <?php echo self::escapeHtml($resultClass); ?> void-banner-meta-result" role="status">
+                        本批：成功 <?php echo $success; ?>，跳过 <?php echo $skipped; ?>，失败 <?php echo $failed; ?>。
+                        <?php echo $hasMore ? '还有更早内容。' : '历史内容已处理完毕。'; ?>
+                    </div>
+                <?php else: ?>
+                    <div class="message notice void-banner-meta-result" role="status">尚未修改数据。开始后将从最新内容向前处理。</div>
+                <?php endif; ?>
+                <div class="void-banner-meta-actions">
+                    <?php if (!$hasResult || $hasMore): ?>
+                    <form action="<?php echo self::escapeHtml($actionUrl); ?>" method="post">
+                        <input type="hidden" name="beforeCid" value="<?php echo $hasResult ? $beforeCid : 0; ?>">
+                        <?php if ($force): ?><input type="hidden" name="force" value="1"><?php endif; ?>
+                        <button class="btn primary" type="submit"><?php echo $hasResult ? '继续下一批' : '开始回填'; ?></button>
+                    </form>
+                    <?php endif; ?>
+                    <?php if (!$force && (!$hasResult || !$hasMore)): ?>
+                    <form action="<?php echo self::escapeHtml($actionUrl); ?>" method="post">
+                        <input type="hidden" name="beforeCid" value="0">
+                        <input type="hidden" name="force" value="1">
+                        <button class="btn" type="submit">从最新内容重新检测</button>
+                    </form>
+                    <?php endif; ?>
+                    <?php if (!$hasResult): ?>
+                    <a class="void-banner-meta-cancel" href="<?php echo self::escapeHtml($settingsUrl); ?>">取消</a>
+                    <?php endif; ?>
+                </div>
+            <?php endif; ?>
+        </section>
+        <?php
     }
 
     public static function editorStatsPanel()
@@ -245,6 +344,10 @@ class VOID_Plugin implements Typecho_Plugin_Interface
      */
     public static function config(Typecho_Widget_Helper_Form $form)
     {
+        if (strtoupper($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'GET') {
+            self::renderBannerMetaSettings();
+        }
+
         // 可设置每次获取图片基础信息数量上限
         $parseImgLimit = new Typecho_Widget_Helper_Form_Element_Text('parseImgLimit', NULL, '10', _t('单次图片处理数量上限'), 
             _t('这里是每次获取图片基础信息的数量上限。不建议设置过大的数值，太大可能导致处理超时。'));
@@ -307,6 +410,11 @@ class VOID_Plugin implements Typecho_Plugin_Interface
     {
         VOID_WordCount::wordCountByCid($widget->cid);
         $ret = VOID_ParseImgInfo::parse($widget->cid);
+        try {
+            VOID_ParseImgInfo::updateBannerMeta($widget->cid);
+        } catch (Exception $e) {
+        } catch (Throwable $e) {
+        }
     }
 
     /**
